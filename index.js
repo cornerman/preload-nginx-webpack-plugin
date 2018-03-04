@@ -20,6 +20,7 @@
 require('object.values').shim();
 
 const objectAssign = require('object-assign');
+const fs = require('fs');
 
 const flatten = arr => arr.reduce((prev, curr) => prev.concat(curr), []);
 
@@ -66,7 +67,7 @@ class PreloadPlugin {
           cb(null, htmlPluginData);
           return;
         }
-        let filesToInclude = '';
+        let filesToInclude = [];
         let extractedChunks = [];
         // 'asyncChunks' are chunks intended for lazy/async loading usually generated as
         // part of code-splitting with import() or require.ensure(). By default, asyncChunks
@@ -141,22 +142,23 @@ class PreloadPlugin {
             } else {
               asValue = options.as;
             }
-            const crossOrigin = asValue === 'font' ? 'crossorigin="crossorigin" ' : '';
-            filesToInclude+= `<link rel="${options.rel}" as="${asValue}" ${crossOrigin}href="${entry}">\n`;
+            const crossOrigin = asValue === 'font' ? '; crossorigin=crossorigin' : '';
+            filesToInclude.push(`<${entry}>; as=${asValue}; rel=${options.rel}${crossOrigin}`);
           } else {
             // If preload isn't specified, the only other valid entry is prefetch here
             // You could specify preconnect but as we're dealing with direct paths to resources
             // instead of origins that would make less sense.
-            filesToInclude+= `<link rel="${options.rel}" href="${entry}">\n`;
+            filesToInclude.push(`"<${entry}>; rel=${options.rel}`);
           }
         });
-        if (htmlPluginData.html.indexOf('</head>') !== -1) {
-          // If a valid closing </head> is found, update it to include preload/prefetch tags
-          htmlPluginData.html = htmlPluginData.html.replace('</head>', filesToInclude + '</head>');
-        } else {
-          // Otherwise assume at least a <body> is present and update it to include a new <head>
-          htmlPluginData.html = htmlPluginData.html.replace('<body>', '<head>' + filesToInclude + '</head><body>');
+
+        if (filesToInclude.length > 0) {
+            let links = filesToInclude.reduce((a,b) => a + ', ' + b)
+            let header = `add_header Link "${links}";`
+            let nginxFilename = htmlPluginData.plugin.options.filename + '.header';
+            fs.writeFileSync(nginxFilename, header);
         }
+
         cb(null, htmlPluginData);
       });
     });
